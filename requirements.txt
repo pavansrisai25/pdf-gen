@@ -1,0 +1,7 @@
+streamlit
+PyPDF2
+Pillow
+python-docx
+reportlab
+python-pptx
+PyMuPDF
