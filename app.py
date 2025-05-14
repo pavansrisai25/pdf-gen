@@ -1,203 +1,350 @@
 import streamlit as st
 from PyPDF2 import PdfReader, PdfWriter
-from PIL import Image
-from io import BytesIO
-from docx import Document
-from pptx import Presentation
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-import fitz  # PyMuPDF for PDF compression
+from io import BytesIO
+from PIL import Image
 import os
+import fitz  # PyMuPDF
+from docx import Document
+from pptx import Presentation
+import zipfile
+import base64
+st.title("PDF-GENERATOR")
+# Predefined scrolling text
+ticker_text = (
+    "💡  Transforming PDFs with ease—convert, merge, split, and more! | "
+    "🎉 100% Free & Fast—No subscriptions, No limits! | "
+    "📂 Upload, Process, Download—All in just a few clicks! | "
+    "💚 Trusted by thousands—Join the community today! | "
+    "🔗 Streamlit-powered for smooth and secure file handling! | "
+    "📢 Stay tuned for exciting updates & new features! | "
+)
+# HTML + JavaScript for the scrolling ticker
+ticker_html = f"""
+<iframe width="100%" height="50" frameborder="0" scrolling="no" style="border:none; overflow:hidden;"
+srcdoc='
+    <style>
+        @keyframes ticker {{
+            from {{ transform: translateX(100%); }}
+            to {{ transform: translateX(-100%); }}
+        }}
+        .ticker-container {{
+            width: 100%;
+            overflow: hidden;
+            background: #008000;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            white-space: nowrap;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            padding: 10px 0;
+            z-index: 1000;
+        }}
+        .ticker-text {{
+            display: inline-block;
+            padding-left: 100%;
+            animation: ticker 50s linear infinite;
+        }}
+    </style>
+    <div class="ticker-container">
+        <div class="ticker-text">{ticker_text}</div>
+    </div>
+'>
+</iframe>
+"""
 
-st.set_page_config(page_title="PDF & File Converter", layout="wide")
-
-# ✅ Load Custom CSS
-def load_css():
-    with open("assets/Style.css", "r") as css_file:
-        st.markdown(f"<style>{css_file.read()}</style>", unsafe_allow_html=True)
-
-load_css()
-
-# ✅ Display Logo
+# Display the moving ticker
+st.markdown(ticker_html, unsafe_allow_html=True)
+# Display the logo with auto-width adjustment
 st.image("logo1.png", width=150)
-st.markdown('<p class="title">📄 PDF & File Converter</p>', unsafe_allow_html=True)
 
-# --- Select Operation ---
-operation = st.selectbox("Select an operation:", [
-    "Click me to see the operations -->",
-    "Clear All Uploaded Files ❌",
-    "Generate Empty PDF 🖨️",
-    "Convert Any File to PDF ♻️",
-    "Images to pdf 🏞️",
-    "Extract Pages from PDF 🪓",
-    "Merge PDFs 📄+📃",
-    "Split PDF (1 to 2 📑 PDFs)",
-    "Compress PDF 📉",
-    "Insert Page Numbers 📝 to PDF"
-])
-if operation == "Clear All Uploaded Files ❌":
-    st.session_state.uploaded_files = []
-    st.success("✅ All uploaded files have been cleared!")
-    st.stop()  # Stop execution so user can select another operation
-if "last_operation" not in st.session_state:
-    st.session_state.last_operation = operation
+# Function to set background image from URL
+def set_bg_from_url():
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            /* Replace this URL with your raw GitHub link */
+            background-image: url("https://raw.githubusercontent.com/Siva369IT/Pdf-well/main/bgimage.png");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+        /* Mobile screens: auto-fit the image height */
+        @media (max-width: 768px) {
+            .stApp {
+                background-size: auto 100%;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
-if st.session_state.last_operation != operation:
-    st.session_state.uploaded_files = []
-    st.session_state.last_operation = operation
+# Apply the background styling
+set_bg_from_url()
+operation = st.selectbox(
+    "Choose an Operation",
+    (
+        "Click here to choose 👇",
+        "Generate Empty PDF",
+        "Convert Any File to PDF",
+        "Extract Pages from PDF",
+        "Merge PDFs",
+        "Split PDF",
+        "Compress PDF",
+        "Insert Page Numbers",
+        "Images to PDF",
+        "Remove uploaded files"
+    )
+)
 
-# ✅ Generate Empty PDF
-if operation == "Generate Empty PDF 🖨️":
-    st.subheader("📄 Generate an Empty PDF")
-    num_pages = st.number_input("Enter number of pages:", min_value=1, max_value=100000, value=1, step=1)
-    if st.button("Generate an Empty PDF"):
+# Dynamic Upload Instructions
+if operation == "Convert Any File to PDF":
+    st.info("Upload .txt, .doc, .docx, .ppt, .pptx, or image files (jpg, png, jpeg)")
+elif operation == "Extract Pages from PDF" or operation in ["Merge PDFs", "Split PDF", "Compress PDF", "Insert Page Numbers"]:
+    st.info("Upload PDF files")
+elif operation == "Images to PDF":
+    st.info("Upload multiple image files (jpg, png, jpeg)")
+elif operation == "Generate Empty PDF":
+    st.info("No file needed. Just enter number of pages.")
+else:
+    st.info("Welcome to pdf-world 💚")
+
+# Uploads
+if operation in ["Convert Any File to PDF", "Images to PDF"]:
+    uploaded_files = st.file_uploader("Upload Files", type=['txt', 'doc', 'docx', 'ppt', 'pptx', 'png', 'jpg', 'jpeg'], accept_multiple_files=True)
+elif operation in ["Extract Pages from PDF", "Compress PDF", "Split PDF", "Insert Page Numbers"]:
+    uploaded_file = st.file_uploader("Upload PDF file", type='pdf')
+elif operation == "Merge PDFs":
+    uploaded_files = st.file_uploader("Upload exactly 2 PDF files", type='pdf', accept_multiple_files=True)
+else:
+    uploaded_file = None
+
+def download_button(file, file_name):
+    st.download_button(label="Download", data=file, file_name=file_name, mime="application/pdf")
+
+
+# 1. Generate Empty PDF
+if operation == "Generate Empty PDF":
+    st.subheader("Generate Empty PDF")
+    num_pages = st.number_input("Enter the number of pages to generate (max 3690):", min_value=1, max_value=3690, step=1)
+    if st.button("Generate"):
         output_pdf = BytesIO()
-        pdf_canvas = canvas.Canvas(output_pdf, pagesize=letter)
-        pdf_canvas.setFont("Helvetica", 12)
-        for i in range(num_pages):
-            pdf_canvas.drawString(100, 750, f"Page {i+1}")
-            pdf_canvas.showPage()
-        pdf_canvas.save()
+        pdf_writer = PdfWriter()
+        for _ in range(num_pages):
+            pdf_writer.add_blank_page(width=612, height=792)
+        pdf_writer.write(output_pdf)
         output_pdf.seek(0)
-        st.success(f"✅ Empty PDF with {num_pages} pages generated!")
-        st.download_button("📥 Download Empty PDF", data=output_pdf, file_name="Empty_PDF.pdf", mime="application/pdf")
-    st.stop()
+        st.success(f"Generated Empty PDF with {num_pages} pages.")
+        custom_name = st.text_input("Enter custom file name (without extension):", value="empty_pdf")
+        st.download_button(
+            label="Download Empty PDF",
+            data=output_pdf,
+            file_name=f"{custom_name}.pdf",
+            mime="application/pdf"
+        )
+# 2. Convert Any File to PDF (direct download)
+elif operation == "Convert Any File to PDF" and uploaded_files:
+    for uploaded in uploaded_files:
+        filename = uploaded.name
+        file_bytes = uploaded.read()
+        file_ext = filename.split('.')[-1].lower()
+        output = BytesIO()
 
-# ✅ File Upload
-uploaded_files = st.file_uploader("Upload file(s)", type=["pdf", "png", "jpg", "jpeg", "txt", "docx", "pptx"], accept_multiple_files=True)
-if uploaded_files:
-    st.session_state.uploaded_files = uploaded_files
-
-    # ✅ Convert Any File to PDF
-    if operation == "Convert Any File to PDF ♻️":
-        st.subheader("🔄 Convert Any File to PDF")
-        for uploaded_file in uploaded_files:
-            file_name = uploaded_file.name.split(".")[0]
-            file_extension = uploaded_file.name.split(".")[-1].lower()
-            output_pdf = BytesIO()
-            if file_extension in ["png", "jpg", "jpeg"]:
-                image = Image.open(uploaded_file)
-                image.convert("RGB").save(output_pdf, format="PDF")
-            elif file_extension == "txt":
-                pdf_canvas = canvas.Canvas(output_pdf, pagesize=letter)
-                for line in uploaded_file.getvalue().decode().split("\n"):
-                    pdf_canvas.drawString(100, 750, line)
-                    pdf_canvas.showPage()
-                pdf_canvas.save()
-            elif file_extension == "docx":
-                doc = Document(uploaded_file)
-                pdf_canvas = canvas.Canvas(output_pdf, pagesize=letter)
+        try:
+            if file_ext == "txt":
+                c = canvas.Canvas(output, pagesize=letter)
+                text = file_bytes.decode("utf-8")
+                text_lines = text.split('\n')
+                y = 750
+                for line in text_lines:
+                    c.drawString(72, y, line)
+                    y -= 15
+                    if y < 72:
+                        c.showPage()
+                        y = 750
+                c.save()
+            elif file_ext in ["doc", "docx"]:
+                doc = Document(BytesIO(file_bytes))
+                c = canvas.Canvas(output, pagesize=letter)
+                y = 750
                 for para in doc.paragraphs:
-                    pdf_canvas.drawString(100, 750, para.text)
-                    pdf_canvas.showPage()
-                pdf_canvas.save()
-            elif file_extension == "pptx":
-                ppt = Presentation(uploaded_file)
-                pdf_canvas = canvas.Canvas(output_pdf, pagesize=letter)
-                for slide in ppt.slides:
+                    c.drawString(72, y, para.text)
+                    y -= 15
+                    if y < 72:
+                        c.showPage()
+                        y = 750
+                c.save()
+            elif file_ext in ["ppt", "pptx"]:
+                presentation = Presentation(BytesIO(file_bytes))
+                c = canvas.Canvas(output, pagesize=letter)
+                for slide in presentation.slides:
                     for shape in slide.shapes:
                         if hasattr(shape, "text"):
-                            pdf_canvas.drawString(100, 750, shape.text)
-                            pdf_canvas.showPage()
-                pdf_canvas.save()
+                            c.drawString(72, 750, shape.text)
+                            c.showPage()
+                c.save()
+            elif file_ext in ["png", "jpg", "jpeg"]:
+                img = Image.open(BytesIO(file_bytes)).convert("RGB")
+                pdf_buffer = BytesIO()
+                img.save(pdf_buffer, format="PDF")
+                pdf_buffer.seek(0)
+                output = pdf_buffer
             else:
-                st.error(f"❌ Unsupported file format: {file_extension}")
+                st.warning(f"Incorrect format ❗: {file_ext}")
                 continue
-            output_pdf.seek(0)
-            st.download_button(f"📥 Download {file_name}.pdf", data=output_pdf, file_name=f"{file_name}.pdf", mime="application/pdf")
 
-    # ✅ Images to PDF
-    elif operation == "Images to pdf 🏞️":
-        st.subheader("🏞️ Convert Multiple Images to Single PDF")
-        image_files = [file for file in uploaded_files if file.type.startswith("image/")]
-        if image_files:
-            if st.button("Convert Images to PDF"):
-                pdf_images = [Image.open(img_file).convert("RGB") for img_file in image_files]
-                output_pdf = BytesIO()
-                pdf_images[0].save(output_pdf, save_all=True, append_images=pdf_images[1:], format="PDF")
-                output_pdf.seek(0)
-                st.success("✅ Images converted to a single PDF!")
-                st.download_button("📥 Download Images PDF", data=output_pdf, file_name="Images_to_PDF.pdf", mime="application/pdf")
-        else:
-            st.warning("⚠️ Please upload image files (PNG, JPG, JPEG) to convert.")
+            output.seek(0)
+            download_button(output, f"{filename.split('.')[0]}.pdf")
+        except Exception as e:
+            st.error(f"Error converting {filename}: {e}")
 
-    # ✅ Extract Pages from PDF
-    elif operation == "Extract Pages from PDF 🪓":
-        pdf_reader = PdfReader(uploaded_files[0])
-        pages_to_extract = st.text_input("Enter page numbers (comma-separated):")
-        if st.button("Extract"):
-            if pages_to_extract:
-                selected_pages = [int(p.strip()) - 1 for p in pages_to_extract.split(",")]
-                pdf_writer = PdfWriter()
-                for p in selected_pages:
-                    if 0 <= p < len(pdf_reader.pages):
-                        pdf_writer.add_page(pdf_reader.pages[p])
-                    else:
-                        st.error(f"Invalid page number: {p+1}")
-                output_pdf = BytesIO()
-                pdf_writer.write(output_pdf)
-                output_pdf.seek(0)
-                st.download_button("📄 Download Extracted PDF", data=output_pdf, file_name="Extracted_Pages.pdf", mime="application/pdf")
+# 3. Extract Pages
+elif operation == "Extract Pages from PDF" and uploaded_file:
+    page_input = st.text_input("Enter page numbers or ranges (e.g., 1,3,5-8):")
+    if st.button("Extract Pages"):
+        try:
+            reader = PdfReader(uploaded_file)
+            writer = PdfWriter()
+            ranges = page_input.replace(' ', '').split(',')
+            pages_to_extract = []
+            for r in ranges:
+                if '-' in r:
+                    start, end = map(int, r.split('-'))
+                    pages_to_extract.extend(range(start-1, end))
+                else:
+                    pages_to_extract.append(int(r)-1)
+            invalid_pages = [p+1 for p in pages_to_extract if p >= len(reader.pages)]
+            if invalid_pages:
+                st.error(f"Pages not found: {invalid_pages}")
+            else:
+                for p in pages_to_extract:
+                    writer.add_page(reader.pages[p])
+                output = BytesIO()
+                writer.write(output)
+                output.seek(0)
+                download_button(output, "extracted_pages.pdf")
+        except Exception as e:
+            st.error(f"Extraction error: {e}")
 
-    # ✅ Merge PDFs
-    elif operation == "Merge PDFs 📄+📃":
-        pdf_writer = PdfWriter()
-        for file in uploaded_files:
-            pdf_reader = PdfReader(file)
-            for page in pdf_reader.pages:
-                pdf_writer.add_page(page)
-        output_pdf = BytesIO()
-        pdf_writer.write(output_pdf)
-        output_pdf.seek(0)
-        st.download_button("📥 Download Merged PDF", data=output_pdf, file_name="Merged_PDF.pdf", mime="application/pdf")
+# 4. Merge PDFs
+elif operation == "Merge PDFs" and uploaded_files:
+    if len(uploaded_files) == 2:
+        merger = PdfWriter()
+        for pdf in uploaded_files:
+            merger.append(PdfReader(pdf))
+        output = BytesIO()
+        merger.write(output)
+        output.seek(0)
+        download_button(output, "merged.pdf")
+    else:
+        st.warning("Please upload exactly 2 PDF files.")
 
-    # ✅ Split PDF with check for single-page
-    elif operation == "Split PDF (1 to 2 📑 PDFs)":
-        pdf_reader = PdfReader(uploaded_files[0])
-        if len(pdf_reader.pages) <= 1:
-            st.warning("⚠️ Cannot split a single-page PDF.")
-        else:
-            split_page = st.number_input("Enter the split page number:", min_value=1, max_value=len(pdf_reader.pages) - 1)
-            if st.button("Split PDF"):
-                part1_writer, part2_writer = PdfWriter(), PdfWriter()
-                for i in range(split_page):
-                    part1_writer.add_page(pdf_reader.pages[i])
-                for i in range(split_page, len(pdf_reader.pages)):
-                    part2_writer.add_page(pdf_reader.pages[i])
-                output1, output2 = BytesIO(), BytesIO()
-                part1_writer.write(output1)
-                part2_writer.write(output2)
-                output1.seek(0)
-                output2.seek(0)
-                st.download_button("📄 Download First Part", data=output1, file_name="Split_Part1.pdf", mime="application/pdf")
-                st.download_button("📄 Download Second Part", data=output2, file_name="Split_Part2.pdf", mime="application/pdf")
+# 5. Split PDF
+elif operation == "Split PDF" and uploaded_file:
+    reader = PdfReader(uploaded_file)
+    choice = st.radio("Choose split method:", ("Custom Split", "Split Each Page"))
+    if choice == "Custom Split":
+        split_at = st.number_input("Split after how many pages?", min_value=1, max_value=len(reader.pages)-1)
+        if st.button("Split PDF"):
+            part1_writer = PdfWriter()
+            part2_writer = PdfWriter()
+            for i, page in enumerate(reader.pages):
+                if i < split_at:
+                    part1_writer.add_page(page)
+                else:
+                    part2_writer.add_page(page)
+            out1, out2 = BytesIO(), BytesIO()
+            part1_writer.write(out1)
+            part2_writer.write(out2)
+            out1.seek(0)
+            out2.seek(0)
+            st.download_button("Download Part 1", data=out1, file_name="part1.pdf")
+            st.download_button("Download Part 2", data=out2, file_name="part2.pdf")
+    else:
+        if st.button("Split into single-page PDFs"):
+            
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w') as zipf:
+                for i, page in enumerate(reader.pages):
+                    writer = PdfWriter()
+                    writer.add_page(page)
+                    part_buffer = BytesIO()
+                    writer.write(part_buffer)
+                    part_buffer.seek(0)
+                    zipf.writestr(f"page_{i+1}.pdf", part_buffer.read())
+            zip_buffer.seek(0)
+            st.download_button("Download ZIP", data=zip_buffer, file_name="split_pages.zip")
 
-    # ✅ Compress PDF
-    elif operation == "Compress PDF 📉":
-        pdf_reader = fitz.open(stream=uploaded_files[0].getvalue(), filetype="pdf")
-        output_pdf = BytesIO()
-        pdf_reader.save(output_pdf, garbage=4, deflate=True)
-        output_pdf.seek(0)
-        st.download_button("📥 Download Compressed PDF", data=output_pdf, file_name="Compressed_PDF.pdf", mime="application/pdf")
+# 6. Compress PDF
+elif operation == "Compress PDF" and uploaded_file:
+    compress_ratio = st.slider("Compression level", 1, 100, 50)
+    if st.button("Compress"):
+        try:
+            input_pdf = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+            output_pdf = fitz.open()
+            for page in input_pdf:
+                pix = page.get_pixmap(matrix=fitz.Matrix(1, 1))
+                img_bytes = pix.tobytes("jpeg")
+                new_page = output_pdf.new_page(width=page.rect.width, height=page.rect.height)
+                new_page.insert_image(new_page.rect, stream=img_bytes)
+            output = BytesIO()
+            output_pdf.save(output)
+            output.seek(0)
+            download_button(output, "compressed.pdf")
+            st.info("Note: Compression depends on PDF content. Some files may not reduce in size.")
+        except Exception as e:
+            st.error(f"Compression error: {e}")
 
-    # ✅ Insert Page Numbers
-    elif operation == "Insert Page Numbers 📝 to PDF":
-        pdf_reader = PdfReader(uploaded_files[0])
-        pdf_writer = PdfWriter()
-        output_pdf = BytesIO()
-        for i, page in enumerate(pdf_reader.pages):
-            packet = BytesIO()
-            c = canvas.Canvas(packet, pagesize=letter)
-            c.setFont("Helvetica", 12)
-            c.drawString(500, 20, f"Page {i + 1}")
-            c.save()
-            packet.seek(0)
-            overlay_reader = PdfReader(packet)
-            page.merge_page(overlay_reader.pages[0])
-            pdf_writer.add_page(page)
-        pdf_writer.write(output_pdf)
-        output_pdf.seek(0)
-        st.download_button("📄 Download Numbered PDF", data=output_pdf, file_name="Numbered_PDF.pdf", mime="application/pdf")
+# 7. Insert Page Numbers
+elif operation == "Insert Page Numbers" and uploaded_file:
+    if st.button("Insert Page Numbers"):
+        try:
+            reader = PdfReader(uploaded_file)
+            writer = PdfWriter()
+            for i, page in enumerate(reader.pages):
+                packet = BytesIO()
+                c = canvas.Canvas(packet, pagesize=letter)
+                c.drawString(300, 15, str(i+1))
+                c.save()
+                packet.seek(0)
+                new_pdf = PdfReader(packet)
+                page.merge_page(new_pdf.pages[0])
+                writer.add_page(page)
+            output = BytesIO()
+            writer.write(output)
+            output.seek(0)
+            download_button(output, "with_page_numbers.pdf")
+        except Exception as e:
+            st.error(f"Insertion error: {e}")
 
-# ✅ Footer
-st.markdown('<div class="footer">© Pavan Sri Sai Mondem | Siva Satyamsetti | Uma Satya Mounika Sapireddy | Bhuvaneswari Devi Seru | Chandu Meela | Techwing Trainees 🧡</div>', unsafe_allow_html=True)
+# 8. Images to PDF
+elif operation == "Images to PDF" and uploaded_files:
+    if st.button("Convert Images to Single PDF"):
+        try:
+            images = [Image.open(f).convert("RGB") for f in uploaded_files]
+            output = BytesIO()
+            images[0].save(output, save_all=True, append_images=images[1:], format="PDF")
+            output.seek(0)
+            download_button(output, "images_combined.pdf")
+        except Exception as e:
+            st.error(f"Image conversion error: {e}")
+
+# Remove all
+elif operation == "Remove Uploaded Files":
+    st.stop()
+
+# Footer at the bottom
+
+st.markdown(
+"""<div style="position: fixed; bottom: 45px; width: 100%; text-align: center; font-size: small; color: #2F4F4F;">
+© 2025 Pavan SriSai Mondem | Siva Satyamsetti | Uma Satya Mounika Sapireddy | Bhuvaneswari Devi Seru | Chandu Meela | Trainees from techwing 🧡 | Made with 💚 by gen ai and aws trainees
+
+   </div>""",  
+    unsafe_allow_html=True  
+)
